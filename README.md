@@ -1,27 +1,93 @@
-# 📊 Student Grading Export System
+# Student Grading Export System
 
-This project allows you to upload student data and export it into Excel files using **ExcelJS**, built with **Next.js 16** and styled with **Tailwind CSS v4**.
+This site lets you upload a grading JSON file, preview the export layout, and download Excel reports for:
 
-You can export:
+- Attendance
+- Activities
+- Participation
+- Final Grades
 
-- ✅ Attendance
-- ✅ Activities
-- ✅ Participation
-- ✅ Final Grades
+It is built with `Next.js 16`, `Tailwind CSS v4`, and `ExcelJS`.
 
----
+## Requirements
 
-## 🚀 Tech Stack
+- Node.js installed
+- A valid grading JSON file
 
-- Next.js 16 (App Router)
-- Tailwind CSS v4
-- ExcelJS
+## Install And Run
 
----
+1. Install dependencies:
 
-## 📁 Data Format
+```bash
+npm install
+```
 
-Your system expects a JSON file like this:
+2. Start the development server:
+
+```bash
+npm run dev
+```
+
+3. Open the site in your browser:
+
+```text
+http://localhost:3000
+```
+
+## How To Use The Site
+
+1. Open the homepage.
+2. Click `Upload JSON`.
+3. Select your grading JSON file.
+4. Wait for the dataset panel to show your subject, teacher, section, and schedule.
+5. Click any `Preview Export` button.
+6. Review the preview modal first.
+7. Click the export button inside the modal to download the Excel file.
+
+If no JSON file is uploaded, export is blocked and the site shows a warning modal.
+
+## Export Flow
+
+The site now uses a preview-first workflow:
+
+1. Upload data
+2. Click `Preview Export`
+3. Review the exact table layout
+4. Confirm export
+5. Download `.xlsx`
+
+This means the preview layout matches the exported Excel structure.
+
+## What Each Export Contains
+
+### Attendance
+
+- One row per student
+- One column per attendance date
+- Attendance codes like `P` and `A`
+
+### Activities
+
+- One row per student
+- One column per activity
+- Raw activity scores
+
+### Participation
+
+- One row per student
+- Participation score column
+- Whole-number output
+
+### Final Grades
+
+- One row per student
+- Weighted grading columns based on your grading settings
+- Separate `Midterm` and `Final` columns
+- Whole-number output with no decimals
+
+## JSON Format
+
+The uploaded file must contain these sections:
 
 ```json
 {
@@ -33,220 +99,41 @@ Your system expects a JSON file like this:
 }
 ```
 
-Each section contains student-related records:
+Optional metadata and grading settings can also be included, such as:
 
-- **students** → list of students
-- **attendance** → date + status (Present/Absent)
-- **activities** → scores per activity
-- **participations** → participation scores
-- **exams** → midterm/final scores
+- `meta`
+- `subject`
+- `grading_settings`
 
----
+## Example Grading Settings
 
-## ⚙️ Installation
+```json
+{
+  "grading_settings": {
+    "attendance_percent": 10,
+    "activities_percent": 20,
+    "participation_percent": 10,
+    "midterm_percent": 30,
+    "final_percent": 30
+  }
+}
+```
+
+These percentages are used in the Final Grades export.
+
+## Notes
+
+- The site starts with no dataset loaded.
+- Users must upload a JSON file first.
+- Preview is shown before exporting.
+- Final grade component values are exported as whole numbers.
+
+## Scripts
 
 ```bash
-npm install exceljs file-saver
+npm run dev
+npm run build
+npm run start
+npm run lint
+npm run format
 ```
-
----
-
-## 📤 Export Functions
-
-### 1. Export Attendance
-
-Creates a sheet showing:
-
-- Student Name
-- Dates
-- Present / Absent
-
-```ts
-import ExcelJS from "exceljs";
-import { saveAs } from "file-saver";
-
-export async function exportAttendance(data) {
-  const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet("Attendance");
-
-  ws.columns = [
-    { header: "Student Name", key: "name" },
-    { header: "Date", key: "date" },
-    { header: "Status", key: "status" },
-  ];
-
-  data.attendance.forEach((a) => {
-    const student = data.students.find((s) => s.id === a.student_id);
-
-    ws.addRow({
-      name: student?.full_name,
-      date: a.attendance_date,
-      status: a.status,
-    });
-  });
-
-  const buffer = await wb.xlsx.writeBuffer();
-  saveAs(new Blob([buffer]), "attendance.xlsx");
-}
-```
-
----
-
-### 2. Export Activities
-
-Each activity becomes a column.
-
-```ts
-export async function exportActivities(data) {
-  const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet("Activities");
-
-  const columns = [
-    { header: "Student Name", key: "name" },
-    ...data.activities.map((a) => ({
-      header: a.title,
-      key: `activity_${a.id}`,
-    })),
-  ];
-
-  ws.columns = columns;
-
-  data.students.forEach((student) => {
-    const row = { name: student.full_name };
-
-    data.activities.forEach((activity) => {
-      const score = activity.scores.find((s) => s.student_id === student.id);
-
-      row[`activity_${activity.id}`] = score?.score ?? 0;
-    });
-
-    ws.addRow(row);
-  });
-
-  const buffer = await wb.xlsx.writeBuffer();
-  saveAs(new Blob([buffer]), "activities.xlsx");
-}
-```
-
----
-
-### 3. Export Participation
-
-```ts
-export async function exportParticipation(data) {
-  const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet("Participation");
-
-  ws.columns = [
-    { header: "Student Name", key: "name" },
-    { header: "Score", key: "score" },
-  ];
-
-  data.students.forEach((student) => {
-    const score = data.participations[0]?.scores.find(
-      (s) => s.student_id === student.id,
-    );
-
-    ws.addRow({
-      name: student.full_name,
-      score: score?.score ?? 0,
-    });
-  });
-
-  const buffer = await wb.xlsx.writeBuffer();
-  saveAs(new Blob([buffer]), "participation.xlsx");
-}
-```
-
----
-
-### 4. Export Final Grades
-
-Combine everything (attendance + activities + participation + exams)
-
-```ts
-export async function exportFinal(data) {
-  const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet("Final Grades");
-
-  ws.columns = [
-    { header: "Student Name", key: "name" },
-    { header: "Final Grade", key: "final" },
-  ];
-
-  data.students.forEach((student) => {
-    const activityAvg =
-      data.activities.reduce((sum, a) => {
-        const score = a.scores.find((s) => s.student_id === student.id);
-        return sum + (score?.score ?? 0);
-      }, 0) / data.activities.length;
-
-    const participation =
-      data.participations[0]?.scores.find((s) => s.student_id === student.id)
-        ?.score ?? 0;
-
-    const exam =
-      data.exams[0]?.scores.find((s) => s.student_id === student.id)?.score ??
-      0;
-
-    const final = activityAvg * 0.2 + participation * 0.1 + exam * 0.7;
-
-    ws.addRow({
-      name: student.full_name,
-      final: final.toFixed(2),
-    });
-  });
-
-  const buffer = await wb.xlsx.writeBuffer();
-  saveAs(new Blob([buffer]), "final-grades.xlsx");
-}
-```
-
----
-
-## 🖥️ Example UI (Next.js + Tailwind)
-
-```tsx
-<button onClick={() => exportAttendance(data)} className="btn">
-  Export Attendance
-</button>
-
-<button onClick={() => exportActivities(data)} className="btn">
-  Export Activities
-</button>
-
-<button onClick={() => exportParticipation(data)} className="btn">
-  Export Participation
-</button>
-
-<button onClick={() => exportFinal(data)} className="btn">
-  Export Final Grades
-</button>
-```
-
----
-
-## 💡 Tips
-
-- Always validate your JSON before exporting
-- You can add:
-  - colors (Excel styles)
-  - bold headers
-  - auto column width
-
-- You can also create **one file with multiple sheets** instead of separate files
-
----
-
-## ✅ Summary
-
-This system lets you:
-
-- Upload grading data
-- Process it in Next.js
-- Export clean Excel reports
-- Separate exports per category
-
----
-
-Happy coding 🚀
