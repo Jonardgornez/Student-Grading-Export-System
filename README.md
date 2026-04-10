@@ -1,36 +1,252 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 📊 Student Grading Export System
 
-## Getting Started
+This project allows you to upload student data and export it into Excel files using **ExcelJS**, built with **Next.js 16** and styled with **Tailwind CSS v4**.
 
-First, run the development server:
+You can export:
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- ✅ Attendance
+- ✅ Activities
+- ✅ Participation
+- ✅ Final Grades
+
+---
+
+## 🚀 Tech Stack
+
+- Next.js 16 (App Router)
+- Tailwind CSS v4
+- ExcelJS
+
+---
+
+## 📁 Data Format
+
+Your system expects a JSON file like this:
+
+```json
+{
+  "students": [],
+  "attendance": [],
+  "activities": [],
+  "participations": [],
+  "exams": []
+}
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Each section contains student-related records:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- **students** → list of students
+- **attendance** → date + status (Present/Absent)
+- **activities** → scores per activity
+- **participations** → participation scores
+- **exams** → midterm/final scores
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+---
 
-## Learn More
+## ⚙️ Installation
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npm install exceljs file-saver
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+---
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 📤 Export Functions
 
-## Deploy on Vercel
+### 1. Export Attendance
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Creates a sheet showing:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Student Name
+- Dates
+- Present / Absent
+
+```ts
+import ExcelJS from "exceljs";
+import { saveAs } from "file-saver";
+
+export async function exportAttendance(data) {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Attendance");
+
+  ws.columns = [
+    { header: "Student Name", key: "name" },
+    { header: "Date", key: "date" },
+    { header: "Status", key: "status" },
+  ];
+
+  data.attendance.forEach((a) => {
+    const student = data.students.find((s) => s.id === a.student_id);
+
+    ws.addRow({
+      name: student?.full_name,
+      date: a.attendance_date,
+      status: a.status,
+    });
+  });
+
+  const buffer = await wb.xlsx.writeBuffer();
+  saveAs(new Blob([buffer]), "attendance.xlsx");
+}
+```
+
+---
+
+### 2. Export Activities
+
+Each activity becomes a column.
+
+```ts
+export async function exportActivities(data) {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Activities");
+
+  const columns = [
+    { header: "Student Name", key: "name" },
+    ...data.activities.map((a) => ({
+      header: a.title,
+      key: `activity_${a.id}`,
+    })),
+  ];
+
+  ws.columns = columns;
+
+  data.students.forEach((student) => {
+    const row = { name: student.full_name };
+
+    data.activities.forEach((activity) => {
+      const score = activity.scores.find((s) => s.student_id === student.id);
+
+      row[`activity_${activity.id}`] = score?.score ?? 0;
+    });
+
+    ws.addRow(row);
+  });
+
+  const buffer = await wb.xlsx.writeBuffer();
+  saveAs(new Blob([buffer]), "activities.xlsx");
+}
+```
+
+---
+
+### 3. Export Participation
+
+```ts
+export async function exportParticipation(data) {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Participation");
+
+  ws.columns = [
+    { header: "Student Name", key: "name" },
+    { header: "Score", key: "score" },
+  ];
+
+  data.students.forEach((student) => {
+    const score = data.participations[0]?.scores.find(
+      (s) => s.student_id === student.id,
+    );
+
+    ws.addRow({
+      name: student.full_name,
+      score: score?.score ?? 0,
+    });
+  });
+
+  const buffer = await wb.xlsx.writeBuffer();
+  saveAs(new Blob([buffer]), "participation.xlsx");
+}
+```
+
+---
+
+### 4. Export Final Grades
+
+Combine everything (attendance + activities + participation + exams)
+
+```ts
+export async function exportFinal(data) {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Final Grades");
+
+  ws.columns = [
+    { header: "Student Name", key: "name" },
+    { header: "Final Grade", key: "final" },
+  ];
+
+  data.students.forEach((student) => {
+    const activityAvg =
+      data.activities.reduce((sum, a) => {
+        const score = a.scores.find((s) => s.student_id === student.id);
+        return sum + (score?.score ?? 0);
+      }, 0) / data.activities.length;
+
+    const participation =
+      data.participations[0]?.scores.find((s) => s.student_id === student.id)
+        ?.score ?? 0;
+
+    const exam =
+      data.exams[0]?.scores.find((s) => s.student_id === student.id)?.score ??
+      0;
+
+    const final = activityAvg * 0.2 + participation * 0.1 + exam * 0.7;
+
+    ws.addRow({
+      name: student.full_name,
+      final: final.toFixed(2),
+    });
+  });
+
+  const buffer = await wb.xlsx.writeBuffer();
+  saveAs(new Blob([buffer]), "final-grades.xlsx");
+}
+```
+
+---
+
+## 🖥️ Example UI (Next.js + Tailwind)
+
+```tsx
+<button onClick={() => exportAttendance(data)} className="btn">
+  Export Attendance
+</button>
+
+<button onClick={() => exportActivities(data)} className="btn">
+  Export Activities
+</button>
+
+<button onClick={() => exportParticipation(data)} className="btn">
+  Export Participation
+</button>
+
+<button onClick={() => exportFinal(data)} className="btn">
+  Export Final Grades
+</button>
+```
+
+---
+
+## 💡 Tips
+
+- Always validate your JSON before exporting
+- You can add:
+  - colors (Excel styles)
+  - bold headers
+  - auto column width
+
+- You can also create **one file with multiple sheets** instead of separate files
+
+---
+
+## ✅ Summary
+
+This system lets you:
+
+- Upload grading data
+- Process it in Next.js
+- Export clean Excel reports
+- Separate exports per category
+
+---
+
+Happy coding 🚀
